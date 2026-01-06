@@ -49,6 +49,7 @@ public partial class MainWindow
         TextBoxDestination.Text = configuration.GetValue("Destination", string.Empty);
         TextBoxUsername.Text = configuration.GetValue("Username", string.Empty);
         PBoxPassword.Password = configuration.GetValue("Password", string.Empty);
+        CheckBoxCleanup.IsChecked = configuration.GetValue("CleanupReport", true);
     }
 
     public ObservableCollection<LogDto> LogCollection { get; } =
@@ -232,5 +233,45 @@ public partial class MainWindow
         _abortRequested = true;
         ButtonAbort.IsEnabled = false;
         _downloadCts?.Cancel();
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        SaveSettings();
+        base.OnClosed(e);
+    }
+
+    private void SaveSettings()
+    {
+        try
+        {
+            var jsonPath = Path.Combine(Directory.GetCurrentDirectory(), "appsettings.json");
+            string json = File.Exists(jsonPath) ? File.ReadAllText(jsonPath) : "{}";
+            
+            // Simple string replacement/construction to avoid heavy JSON dependencies if not already referenced, 
+            // but assuming System.Text.Json is available in modern .NET
+            var options = new System.Text.Json.Nodes.JsonObject();
+            
+            // Try to parse existing to keep other keys (like Serilog)
+            try 
+            {
+               var node = System.Text.Json.Nodes.JsonNode.Parse(json);
+               if (node is System.Text.Json.Nodes.JsonObject obj) options = obj;
+            } 
+            catch { }
+
+            options["MissFile"] = TextBoxFilename.Text;
+            options["Website"] = TextBoxWebsite.Text;
+            options["Username"] = TextBoxUsername.Text;
+            options["Password"] = PBoxPassword.Password;
+            options["Destination"] = TextBoxDestination.Text;
+            options["CleanupReport"] = CheckBoxCleanup.IsChecked == true;
+
+            File.WriteAllText(jsonPath, options.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Failed to save settings: {ex.Message}");
+        }
     }
 }

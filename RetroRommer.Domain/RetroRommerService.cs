@@ -224,6 +224,22 @@ public class RetroRommerService
         
         _logger.Information($"Downloading {fileName} from {url} to {folder}");
         using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+
+        // Check for HTML content even if status code is OK
+        // This handles cases where the server returns a 200 OK with an HTML error page (e.g. rate limit, maintenance)
+        if (response.Content.Headers.ContentType?.MediaType?.Equals("text/html", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (IsTooManyAttempts(response.StatusCode, response.ReasonPhrase, responseBody))
+            {
+                _logger.Fatal("Server reported too many attempts (HTML response). Aborting remaining downloads to avoid an IP ban.");
+                throw new TooManyAttemptsException("Server reported too many attempts. Aborting downloads to avoid IP ban.");
+            }
+
+            // If it's HTML but we expected a file download, treat it as an error
+            var preview = responseBody.Length > 200 ? responseBody[..200] : responseBody;
+            throw new HttpRequestException($"Received unexpected HTML content instead of binary file. Response preview: {preview}");
+        }
         
         if (!response.IsSuccessStatusCode)
         {

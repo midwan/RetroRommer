@@ -1,6 +1,7 @@
 ﻿using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Windows;
 using Microsoft.Extensions.Configuration;
@@ -205,6 +206,21 @@ public partial class MainWindow
             };
             LogCollection.Add(logRow);
             ProgressBarDownload.Value = 100; // ensure full bar on completion
+
+            if (CheckBoxCleanup.IsChecked == true)
+            {
+                var successfulItems = downloadItems.Where(x => 
+                    LogCollection.Any(l => l.Filename == x.FileName && l.Status == LogStatus.Success)).ToList();
+                    
+                await Task.Run(() => _service.CleanupReport(_filename, successfulItems));
+                
+                 LogCollection.Add(new LogDto
+                 {
+                     Filename = "System",
+                     Result = "Report file cleaned up.",
+                     Status = LogStatus.Info
+                 });
+            }
         }
         ButtonAbort.IsEnabled = false;
         _downloadCts?.Dispose();

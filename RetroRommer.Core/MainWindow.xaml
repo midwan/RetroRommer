@@ -25,6 +25,7 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" MinWidth="140"/>
@@ -39,6 +40,8 @@
                 <Label Content="Destination Folder:" Grid.Row="1" Grid.Column="0" VerticalAlignment="Center"/>
                 <ui:TextBox x:Name="TextBoxDestination" Grid.Row="1" Grid.Column="1" Margin="5" VerticalAlignment="Center"/>
                 <ui:Button x:Name="ButtonSelectDestination" Grid.Row="1" Grid.Column="2" Content="Browse" Icon="Folder24" Margin="5" Click="ButtonSelectDestination_Click"/>
+
+                <CheckBox x:Name="CheckBoxCleanup" Grid.Row="2" Grid.Column="1" Content="Remove finished items from report" Margin="5" VerticalAlignment="Center" IsChecked="True"/>
             </Grid>
         </GroupBox>
 

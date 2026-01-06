@@ -309,4 +309,88 @@ public class RetroRommerService
         // Return a more readable error if possible, otherwise the exception message
         return ex.Message;
     }
+
+    public void CleanupReport(string file, IEnumerable<DownloadItem> successfulDownloads)
+    {
+        if (string.IsNullOrEmpty(file) || !File.Exists(file)) return;
+        
+        // Cache successful downloads for faster lookup
+        // Use a composite key or separate sets.
+        // For ROMs and Samples, we assume 1 set = 1 download (as we download the whole zip).
+        // For CHDs, it's specific filenames.
+        
+        var successfulRoms = new HashSet<string>(successfulDownloads
+            .Where(x => x.Type == DownloadType.Rom || x.Type == DownloadType.Bios)
+            .Select(x => x.SetName));
+            
+        var successfulSamples = new HashSet<string>(successfulDownloads
+            .Where(x => x.Type == DownloadType.Sample)
+            .Select(x => x.SetName));
+            
+        var successfulChds = new HashSet<string>(successfulDownloads
+            .Where(x => x.Type == DownloadType.Chd)
+            .Select(x => x.FileName)); // CHDs are tracked by filename in the list logic below
+
+        try
+        {
+            var lines = File.ReadAllLines(file);
+            var outputLines = new List<string>();
+            string currentSet = string.Empty;
+
+            foreach (var line in lines)
+            {
+                var trimmed = line.Trim();
+
+                // Set detection (copy-pasted logic from ParseReport essentially)
+                if (trimmed.EndsWith("]") && trimmed.Contains("[") && !trimmed.StartsWith("missing", StringComparison.OrdinalIgnoreCase))
+                {
+                    var lastOpen = trimmed.LastIndexOf('[');
+                    if (lastOpen != -1)
+                    {
+                        var possibleSet = trimmed.Substring(lastOpen + 1, trimmed.Length - lastOpen - 2);
+                        if (!possibleSet.Contains(':'))
+                        {
+                            currentSet = possibleSet;
+                        }
+                    }
+                    outputLines.Add(line);
+                    continue;
+                }
+
+                if (trimmed.StartsWith("missing rom:"))
+                {
+                    // For ROM/Bios, if we downloaded the set, we remove the line.
+                    // Note: This removes *all* missing rom lines for that set if we marked the set as success.
+                    // Since our downloader downloads "setname.zip" which presumably contains all needed roms, this is safe.
+                    if (successfulRoms.Contains(currentSet)) continue;
+                }
+                
+                if (trimmed.StartsWith("missing sample:"))
+                {
+                    if (successfulSamples.Contains(currentSet)) continue;
+                }
+                
+                if (trimmed.StartsWith("missing disk:"))
+                {
+                     var content = trimmed.Substring("missing disk:".Length).Trim();
+                     var crcIndex = content.IndexOf("[", StringComparison.OrdinalIgnoreCase);
+                     if (crcIndex > 0) content = content.Substring(0, crcIndex).Trim();
+                     if (!string.IsNullOrWhiteSpace(content))
+                     {
+                         if (!content.EndsWith(".chd", StringComparison.OrdinalIgnoreCase)) content += ".chd";
+                         if (successfulChds.Contains(content)) continue;
+                     }
+                }
+
+                outputLines.Add(line);
+            }
+            
+            File.WriteAllLines(file, outputLines);
+            _logger.Information($"Cleaned up report file {file}");
+        }
+        catch (Exception e)
+        {
+            _logger.Error($"Failed to cleanup report file {file}: {e.Message}");
+        }
+    }
 }

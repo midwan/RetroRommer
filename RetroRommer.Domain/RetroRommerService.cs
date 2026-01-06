@@ -110,6 +110,30 @@ public class RetroRommerService
                     continue;
                 }
 
+                if (trimmed.StartsWith("missing disk:"))
+                {
+                    if (string.IsNullOrEmpty(currentSet)) continue;
+                    
+                    var content = trimmed.Substring("missing disk:".Length).Trim();
+                    var crcIndex = content.IndexOf("[", StringComparison.OrdinalIgnoreCase);
+                    if (crcIndex > 0) content = content.Substring(0, crcIndex).Trim();
+                    
+                    if (string.IsNullOrWhiteSpace(content)) continue;
+
+                    if (!content.EndsWith(".chd", StringComparison.OrdinalIgnoreCase))
+                    {
+                        content += ".chd";
+                    }
+
+                    results.Add(new DownloadItem 
+                    { 
+                        SetName = currentSet, 
+                        FileName = content, 
+                        Type = DownloadType.Chd 
+                    });
+                    continue;
+                }
+
                 // Set detection: "Game Name [setname]"
                 if (trimmed.EndsWith("]") && trimmed.Contains("["))
                 {

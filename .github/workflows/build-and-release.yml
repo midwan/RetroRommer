@@ -25,7 +25,7 @@ jobs:
       run: dotnet restore
 
     - name: Build
-      run: dotnet build --no-restore --configuration Release -p:Version=${{ github.ref_name }}
+      run: dotnet build --no-restore --configuration Release
 
   release:
     name: Create Release

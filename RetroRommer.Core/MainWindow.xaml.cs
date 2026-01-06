@@ -113,36 +113,69 @@ public partial class MainWindow
     {
         _logger.Information("Beginning to download files...");
         ButtonAbort.IsEnabled = true;
+        ProgressBarDownload.Value = 0;
         
-        var downloadItems = _service.ParseReport(_filename);
+        var downloadItems = _service.ParseReport(_filename).ToList();
+        ProgressBarDownload.Maximum = downloadItems.Count;
 
         try
         {
+            if (downloadItems.Count == 0)
+            {
+                LogCollection.Add(new LogDto
+                {
+                     Filename = "System",
+                     Result = "No missing items found to download.",
+                     Status = LogStatus.Warning
+                });
+            }
+
             foreach (var item in downloadItems)
             {
                 if (_abortRequested || cancellationToken.IsCancellationRequested) break;
                 
                 try
                 {
+                    var result = await _service.GetFile(_website, item, _username, _password, _destinationPath, cancellationToken);
                     var logRow = new LogDto
                     {
                         Filename = item.FileName,
-                        Result = await _service.GetFile(_website, item, _username, _password, _destinationPath, cancellationToken)
+                        Result = result,
+                        Status = result == "OK" ? LogStatus.Success : LogStatus.Warning
                     };
-                    LogCollection.Add(logRow);
-
-                    if (logRow.Result == "Unauthorized")
+                    
+                    if (result == "Unauthorized")
+                    {
+                        logRow.Status = LogStatus.Error;
+                        LogCollection.Add(logRow);
                         break;
+                    }
+                    
+                    LogCollection.Add(logRow);
                 }
                 catch (TooManyAttemptsException ex)
                 {
                     LogCollection.Add(new LogDto
                     {
                         Filename = item.FileName,
-                        Result = ex.Message
+                        Result = ex.Message,
+                        Status = LogStatus.Error
                     });
                     _abortRequested = true;
                     break;
+                }
+                catch (Exception ex)
+                {
+                    LogCollection.Add(new LogDto
+                    {
+                        Filename = item.FileName,
+                        Result = ex.Message,
+                        Status = LogStatus.Error
+                    });
+                }
+                finally
+                {
+                    ProgressBarDownload.Value++;
                 }
             }
         }
@@ -156,7 +189,9 @@ public partial class MainWindow
             _abortRequested = false;
             var logRow = new LogDto
             {
-                Filename = "Aborted!"
+                Filename = "System",
+                Result = "Aborted!",
+                Status = LogStatus.Warning
             };
             LogCollection.Add(logRow);
         }
@@ -164,9 +199,12 @@ public partial class MainWindow
         {
             var logRow = new LogDto
             {
-                Filename = "All downloads finished."
+                Filename = "System",
+                Result = "All downloads finished.",
+                Status = LogStatus.Success
             };
             LogCollection.Add(logRow);
+            ProgressBarDownload.Value = 100; // ensure full bar on completion
         }
         ButtonAbort.IsEnabled = false;
         _downloadCts?.Dispose();

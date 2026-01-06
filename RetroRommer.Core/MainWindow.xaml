@@ -7,12 +7,9 @@
         Background="{DynamicResource ApplicationBackgroundBrush}"
         mc:Ignorable="d"
         DataContext="{Binding RelativeSource={RelativeSource Self}}"
-        Title="MainWindow" Height="600" Width="620" WindowStartupLocation="CenterScreen" MinHeight="400" MinWidth="620">
-    <Grid>
+        Title="RetroRommer" Height="600" Width="700" WindowStartupLocation="CenterScreen" MinHeight="500" MinWidth="650">
+    <Grid Margin="12">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -22,45 +19,118 @@
 
         <ui:TitleBar Title="RetroRommer" Grid.Row="0"/>
 
-        <StackPanel Grid.Row="1" Orientation="Horizontal">
-            <Label Content="MAME Miss file:" Width="110" Margin="20" VerticalAlignment="Top"/>
-            <ui:TextBox x:Name="TextBoxFilename" Width="350" Margin="10" TextWrapping="Wrap" VerticalAlignment="Top" VerticalContentAlignment="Center"/>
-            <ui:Button x:Name="ButtonSelectFile" Content="Select" Margin="10" VerticalAlignment="Top" Click="ButtonSelectFile_Click"/>
-        </StackPanel>
-        
-        <StackPanel Grid.Row="2" Orientation="Horizontal">
-            <Label Content="Destination folder:" Width="110" Margin="20" VerticalAlignment="Top"/>
-            <ui:TextBox x:Name="TextBoxDestination" Width="350" Margin="10" TextWrapping="Wrap" VerticalAlignment="Top" VerticalContentAlignment="Center"/>
-            <ui:Button x:Name="ButtonSelectDestination" Content="Select" Margin="10" VerticalAlignment="Top" Click="ButtonSelectDestination_Click"/>
+        <!-- Files Section -->
+        <GroupBox Header="Files &amp; Paths" Grid.Row="1" Margin="0,0,0,10">
+            <Grid Margin="10">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" MinWidth="140"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <Label Content="MAME Report File:" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center"/>
+                <ui:TextBox x:Name="TextBoxFilename" Grid.Row="0" Grid.Column="1" Margin="5" VerticalAlignment="Center"/>
+                <ui:Button x:Name="ButtonSelectFile" Grid.Row="0" Grid.Column="2" Content="Browse" Icon="Folder24" Margin="5" Click="ButtonSelectFile_Click"/>
+
+                <Label Content="Destination Folder:" Grid.Row="1" Grid.Column="0" VerticalAlignment="Center"/>
+                <ui:TextBox x:Name="TextBoxDestination" Grid.Row="1" Grid.Column="1" Margin="5" VerticalAlignment="Center"/>
+                <ui:Button x:Name="ButtonSelectDestination" Grid.Row="1" Grid.Column="2" Content="Browse" Icon="Folder24" Margin="5" Click="ButtonSelectDestination_Click"/>
+            </Grid>
+        </GroupBox>
+
+        <!-- Connection Section -->
+        <GroupBox Header="Connection" Grid.Row="2" Margin="0,0,0,10">
+             <Grid Margin="10">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                     <ColumnDefinition Width="Auto" MinWidth="140"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <Label Content="Download Website:" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center"/>
+                <ui:TextBox x:Name="TextBoxWebsite" Grid.Row="0" Grid.Column="1" Margin="5" VerticalAlignment="Center"/>
+
+                <Label Content="Username:" Grid.Row="1" Grid.Column="0" VerticalAlignment="Center"/>
+                <ui:TextBox x:Name="TextBoxUsername" Grid.Row="1" Grid.Column="1" Margin="5" VerticalAlignment="Center"/>
+
+                <Label Content="Password:" Grid.Row="2" Grid.Column="0" VerticalAlignment="Center"/>
+                <ui:PasswordBox x:Name="PBoxPassword" Grid.Row="2" Grid.Column="1" Margin="5" VerticalAlignment="Center"/>
+            </Grid>
+        </GroupBox>
+
+        <!-- Actions -->
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,10">
+            <ui:Button x:Name="ButtonDownload" Content="Start Download" Icon="ArrowDownload24" Width="160" Margin="5" Click="ButtonDownload_Click" IsDefault="True" Appearance="Primary"/>
+            <ui:Button x:Name="ButtonAbort" Content="Stop" Icon="Dismiss24" Width="120" Margin="5" Click="ButtonAbort_OnClick" IsEnabled="False" IsCancel="True" Appearance="Danger"/>
         </StackPanel>
 
-        <StackPanel Grid.Row="3" Orientation="Horizontal">
-            <Label Content="Download website:" Width="110" Margin="20" VerticalAlignment="Top"/>
-            <ui:TextBox x:Name="TextBoxWebsite" Width="350" Margin="10" TextWrapping="Wrap" VerticalAlignment="Top" VerticalContentAlignment="Center"/>
-        </StackPanel>
+        <!-- Logs -->
+        <Grid Grid.Row="4">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="4" Orientation="Horizontal">
-            <Label Content="Username:" Width="70" HorizontalAlignment="Left" Margin="20" VerticalAlignment="Top"/>
-            <ui:TextBox x:Name="TextBoxUsername" Width="200" Margin="10" TextWrapping="Wrap" VerticalAlignment="Top" VerticalContentAlignment="Center"/>
-        </StackPanel>
+            <ProgressBar x:Name="ProgressBarDownload" Grid.Row="0" Margin="0,0,0,5" Height="4" Minimum="0" Maximum="100"/>
 
-        <StackPanel Grid.Row="5" Orientation="Horizontal">
-            <Label Content="Password:" Width="70" HorizontalAlignment="Left" Margin="20" VerticalAlignment="Top"/>
-            <ui:PasswordBox x:Name="PBoxPassword" Width="200" Margin="10" VerticalAlignment="Top" VerticalContentAlignment="Center"/>
-        </StackPanel>
- 
-        <StackPanel Grid.Row="6" Orientation="Horizontal">
-            <ui:Button x:Name="ButtonDownload" Content="Begin Downloads" Width="150" Margin="20" VerticalAlignment="Bottom" Click="ButtonDownload_Click" IsDefault="True"/>
-            <ui:Button x:Name="ButtonAbort" Content="Abort" Width="150" Margin="20" Click="ButtonAbort_OnClick" IsEnabled="False" IsCancel="True"/>
-        </StackPanel>
+            <ui:ListView x:Name="LvLog" Grid.Row="1" ItemsSource="{Binding LogCollection}" BorderThickness="1" BorderBrush="#33000000">
+                <ListView.View>
+                    <ui:GridView>
+                        <ui:GridViewColumn Header="Time" Width="80">
+                            <ui:GridViewColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Timestamp, StringFormat=HH:mm:ss}" Foreground="Gray"/>
+                                </DataTemplate>
+                            </ui:GridViewColumn.CellTemplate>
+                        </ui:GridViewColumn>
+                        
+                        <ui:GridViewColumn Header="Status" Width="50">
+                            <ui:GridViewColumn.CellTemplate>
+                                <DataTemplate>
+                                    <ui:SymbolIcon Symbol="Info24" FontSize="16" Foreground="Gray" x:Name="StatusIcon"/>
+                                    <DataTemplate.Triggers>
+                                        <DataTrigger Binding="{Binding Status}" Value="Success">
+                                            <Setter TargetName="StatusIcon" Property="Symbol" Value="CheckmarkCircle24"/>
+                                            <Setter TargetName="StatusIcon" Property="Foreground" Value="Green"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Status}" Value="Error">
+                                            <Setter TargetName="StatusIcon" Property="Symbol" Value="DismissCircle24"/>
+                                            <Setter TargetName="StatusIcon" Property="Foreground" Value="Red"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Status}" Value="Warning">
+                                            <Setter TargetName="StatusIcon" Property="Symbol" Value="Warning24"/>
+                                            <Setter TargetName="StatusIcon" Property="Foreground" Value="Orange"/>
+                                        </DataTrigger>
+                                    </DataTemplate.Triggers>
+                                </DataTemplate>
+                            </ui:GridViewColumn.CellTemplate>
+                        </ui:GridViewColumn>
 
-        <ui:ListView x:Name="LvLog" Grid.Row="7" Margin="5" ItemsSource="{Binding LogCollection}">
-            <ListView.View>
-                <ui:GridView>
-                    <ui:GridViewColumn Header="Filename" Width="400" DisplayMemberBinding="{Binding Filename}"/>
-                    <ui:GridViewColumn Header="Result" Width="200" DisplayMemberBinding="{Binding Result}"/>
-                </ui:GridView>
-            </ListView.View>
-        </ui:ListView>
+                        <ui:GridViewColumn Header="Filename" Width="350" DisplayMemberBinding="{Binding Filename}"/>
+                        
+                        <ui:GridViewColumn Header="Result" Width="250">
+                            <ui:GridViewColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Result}" x:Name="ResultText"/>
+                                    <DataTemplate.Triggers>
+                                        <DataTrigger Binding="{Binding Status}" Value="Error">
+                                            <Setter TargetName="ResultText" Property="Foreground" Value="Red"/>
+                                        </DataTrigger>
+                                    </DataTemplate.Triggers>
+                                </DataTemplate>
+                            </ui:GridViewColumn.CellTemplate>
+                        </ui:GridViewColumn>
+                    </ui:GridView>
+                </ListView.View>
+            </ui:ListView>
+        </Grid>
     </Grid>
 </ui:FluentWindow>

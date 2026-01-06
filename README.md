@@ -1,6 +1,6 @@
 # RetroRommer [BETA]
 
-![License](https://img.shields.io/github/license/midwan/RetroRommer)
+![License](https://img.shields.io/badge/license-GPL--3.0-blue)
 ![Build Status](https://img.shields.io/github/actions/workflow/status/midwan/RetroRommer/build-and-release.yml)
 ![Version](https://img.shields.io/github/v/release/midwan/RetroRommer)
 

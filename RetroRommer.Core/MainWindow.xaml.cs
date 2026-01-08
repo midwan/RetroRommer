@@ -1,7 +1,9 @@
 ﻿using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.ComponentModel;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Windows;
 using Microsoft.Extensions.Configuration;
@@ -16,7 +18,7 @@ namespace RetroRommer.Core;
 /// <summary>
 ///     Interaction logic for MainWindow.xaml
 /// </summary>
-public partial class MainWindow
+public partial class MainWindow : INotifyPropertyChanged
 {
     private readonly RetroRommerService _service;
     private string _destinationPath;
@@ -27,6 +29,42 @@ public partial class MainWindow
     private bool _abortRequested;
     private string _website;
     private CancellationTokenSource? _downloadCts;
+
+    private bool _isDownloading;
+
+    public bool IsDownloading
+    {
+        get => _isDownloading;
+        private set
+        {
+            if (_isDownloading == value) return;
+            _isDownloading = value;
+
+            ButtonDownload.IsEnabled = !value;
+            ButtonAbort.IsEnabled = value;
+
+            OnPropertyChanged();
+        }
+    }
+
+    public ObservableCollection<DownloadItemProgressViewModel> DownloadProgressCollection { get; } = [];
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+    {
+        if (string.IsNullOrWhiteSpace(propertyName)) return;
+
+        if (Dispatcher.CheckAccess())
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+        else
+        {
+            // avoid potential deadlock if called while UI thread is awaiting
+            Dispatcher.BeginInvoke(new Action(() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName))));
+        }
+    }
 
     public MainWindow()
     {
@@ -40,7 +78,8 @@ public partial class MainWindow
             .CreateLogger();
 
         InitializeComponent();
-        ((INotifyCollectionChanged)LvLog.Items).CollectionChanged += ListView_CollectionChanged;
+
+        DownloadProgressCollection.CollectionChanged += DownloadsCollection_CollectionChanged;
 
         _service = new RetroRommerService(_logger);
 
@@ -50,18 +89,25 @@ public partial class MainWindow
         TextBoxUsername.Text = configuration.GetValue("Username", string.Empty);
         PBoxPassword.Password = configuration.GetValue("Password", string.Empty);
         CheckBoxCleanup.IsChecked = configuration.GetValue("CleanupReport", true);
+
+        // initialize state
+        IsDownloading = false;
     }
 
-    public ObservableCollection<LogDto> LogCollection { get; } =
-        [];
-
-    private void ListView_CollectionChanged(object sender, NotifyCollectionChangedEventArgs e)
+    private void DownloadsCollection_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        if (e.Action == NotifyCollectionChangedAction.Add)
+        if (e.Action != NotifyCollectionChangedAction.Add) return;
+
+        var last = e.NewItems?[^1];
+        if (last == null) return;
+
+        if (Dispatcher.CheckAccess())
         {
-            // scroll the new item into view
-            if (e.NewItems?[0] != null)
-                LvLog.ScrollIntoView(e.NewItems[0]);
+            LvDownloads.ScrollIntoView(last);
+        }
+        else
+        {
+            Dispatcher.BeginInvoke(new Action(() => LvDownloads.ScrollIntoView(last)));
         }
     }
 
@@ -70,14 +116,12 @@ public partial class MainWindow
         var dlg = new OpenFileDialog
         {
             DefaultExt = ".txt",
-            Filter =
-                "TXT Files (*.txt)|*.txt"
+            Filter = "TXT Files (*.txt)|*.txt"
         };
 
         var result = dlg.ShowDialog();
         if (result != true) return;
-        var filename = dlg.FileName;
-        TextBoxFilename.Text = filename;
+        TextBoxFilename.Text = dlg.FileName;
     }
 
     private void ButtonSelectDestination_Click(object sender, RoutedEventArgs e)
@@ -88,144 +132,198 @@ public partial class MainWindow
 
     private async void ButtonDownload_Click(object sender, RoutedEventArgs e)
     {
-        _website = TextBoxWebsite.Text;
-        _filename = TextBoxFilename.Text;
-        _destinationPath = TextBoxDestination.Text;
-        _username = TextBoxUsername.Text;
-        _password = PBoxPassword.Password;
-
-        if (string.IsNullOrEmpty(_website) || string.IsNullOrEmpty(_filename) ||
-            string.IsNullOrEmpty(_destinationPath))
+        try
         {
-            MessageBox.Show(
-                "Missing required information! Make sure the Website, filename and destination fields are filled in.",
-                "Missing required information", MessageBoxButton.OK, MessageBoxImage.Error);
-            return;
+            _website = TextBoxWebsite.Text;
+            _filename = TextBoxFilename.Text;
+            _destinationPath = TextBoxDestination.Text;
+            _username = TextBoxUsername.Text;
+            _password = PBoxPassword.Password;
+
+            if (string.IsNullOrEmpty(_website) || string.IsNullOrEmpty(_filename) ||
+                string.IsNullOrEmpty(_destinationPath))
+            {
+                MessageBox.Show(
+                    "Missing required information! Make sure the Website, filename and destination fields are filled in.",
+                    "Missing required information", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            _abortRequested = false;
+            _downloadCts?.Cancel();
+            _downloadCts?.Dispose();
+            _downloadCts = new CancellationTokenSource();
+
+            await PrepareAndDownloadFiles(_downloadCts.Token);
         }
-
-        _abortRequested = false;
-        _downloadCts?.Cancel();
-        _downloadCts?.Dispose();
-        _downloadCts = new CancellationTokenSource();
-
-        await PrepareAndDownloadFiles(_downloadCts.Token);
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Unexpected error starting download");
+            MessageBox.Show(ex.Message, "Error starting download", MessageBoxButton.OK, MessageBoxImage.Error);
+            IsDownloading = false;
+            _downloadCts?.Dispose();
+            _downloadCts = null;
+        }
     }
 
     private async Task PrepareAndDownloadFiles(CancellationToken cancellationToken)
     {
         _logger.Information("Beginning to download files...");
-        ButtonAbort.IsEnabled = true;
-        ProgressBarDownload.Value = 0;
-        
-        var downloadItems = _service.ParseReport(_filename).ToList();
-        ProgressBarDownload.Maximum = downloadItems.Count;
+        IsDownloading = true;
 
         try
         {
-            if (downloadItems.Count == 0)
-            {
-                LogCollection.Add(new LogDto
-                {
-                     Filename = "System",
-                     Result = "No missing items found to download.",
-                     Status = LogStatus.Warning
-                });
-            }
+            ProgressBarDownload.Value = 0;
+            DownloadProgressCollection.Clear();
 
-            foreach (var item in downloadItems)
+            var downloadItems = _service.ParseReport(_filename).ToList();
+            ProgressBarDownload.Maximum = downloadItems.Count;
+
+            try
             {
-                if (_abortRequested || cancellationToken.IsCancellationRequested) break;
-                
-                try
+                if (downloadItems.Count == 0)
                 {
-                    var result = await _service.GetFile(_website, item, _username, _password, _destinationPath, cancellationToken);
-                    var logRow = new LogDto
+                    DownloadProgressCollection.Add(new DownloadItemProgressViewModel
                     {
-                        Filename = item.FileName,
-                        Result = result,
-                        Status = result == "OK" ? LogStatus.Success : LogStatus.Warning
+                        FileName = "System",
+                        Status = "No missing items found to download.",
+                        BytesReceived = 0,
+                        TotalBytes = null,
+                        BytesPerSecond = null
+                    });
+                }
+
+                foreach (var item in downloadItems)
+                {
+                    if (_abortRequested || cancellationToken.IsCancellationRequested) break;
+
+                    var vm = new DownloadItemProgressViewModel
+                    {
+                        FileName = item.FileName,
+                        Status = "Starting...",
+                        BytesReceived = 0,
+                        TotalBytes = null,
+                        BytesPerSecond = null
                     };
-                    
-                    if (result == "Unauthorized")
+
+                    DownloadProgressCollection.Add(vm);
+
+                    var uiProgress = new Progress<DownloadProgressInfo>(p =>
                     {
-                        logRow.Status = LogStatus.Error;
-                        LogCollection.Add(logRow);
+                        vm.TotalBytes = p.TotalBytes;
+                        vm.BytesReceived = p.BytesReceived;
+                        vm.BytesPerSecond = p.BytesPerSecond;
+                        vm.Status = "Downloading";
+                    });
+
+                    try
+                    {
+                        var result = await _service.GetFile(_website, item, _username, _password, _destinationPath, cancellationToken, uiProgress);
+
+                        vm.Status = result == "OK" ? "Done" : result;
+
+                        if (result == "Unauthorized")
+                        {
+                            vm.Status = "Unauthorized";
+                            break;
+                        }
+                    }
+                    catch (TooManyAttemptsException ex)
+                    {
+                        vm.Status = $"Error: {ex.Message}";
+                        _abortRequested = true;
                         break;
                     }
-                    
-                    LogCollection.Add(logRow);
-                }
-                catch (TooManyAttemptsException ex)
-                {
-                    LogCollection.Add(new LogDto
+                    catch (OperationCanceledException)
                     {
-                        Filename = item.FileName,
-                        Result = ex.Message,
-                        Status = LogStatus.Error
-                    });
-                    _abortRequested = true;
-                    break;
+                        vm.Status = "Canceled";
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        vm.Status = $"Error: {ex.Message}";
+                    }
+                    finally
+                    {
+                        ProgressBarDownload.Value++;
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                _abortRequested = true;
+            }
+
+            // Cleanup successfully downloaded items even if we aborted, if option is enabled.
+            if (CheckBoxCleanup.IsChecked == true)
+            {
+                try
+                {
+                    var successfulItems = downloadItems.Where(x =>
+                        DownloadProgressCollection.Any(p => p.FileName == x.FileName && p.Status == "Done")).ToList();
+
+                    if (successfulItems.Count > 0)
+                    {
+                        await Task.Run(() => _service.CleanupReport(_filename, successfulItems));
+
+                        DownloadProgressCollection.Add(new DownloadItemProgressViewModel
+                        {
+                            FileName = "System",
+                            Status = _abortRequested
+                                ? $"Report file cleaned up ({successfulItems.Count} downloaded item(s) removed)."
+                                : "Report file cleaned up.",
+                            BytesReceived = 0,
+                            TotalBytes = null,
+                            BytesPerSecond = null
+                        });
+                    }
                 }
                 catch (Exception ex)
                 {
-                    LogCollection.Add(new LogDto
+                    DownloadProgressCollection.Add(new DownloadItemProgressViewModel
                     {
-                        Filename = item.FileName,
-                        Result = ex.Message,
-                        Status = LogStatus.Error
+                        FileName = "System",
+                        Status = $"Failed to clean up report file: {ex.Message}",
+                        BytesReceived = 0,
+                        TotalBytes = null,
+                        BytesPerSecond = null
                     });
                 }
-                finally
+            }
+
+            if (_abortRequested)
+            {
+                _abortRequested = false;
+                DownloadProgressCollection.Add(new DownloadItemProgressViewModel
                 {
-                    ProgressBarDownload.Value++;
-                }
+                    FileName = "System",
+                    Status = "Aborted!",
+                    BytesReceived = 0,
+                    TotalBytes = null,
+                    BytesPerSecond = null
+                });
             }
-        }
-        catch (OperationCanceledException)
-        {
-            _abortRequested = true;
-        }
+            else
+            {
+                DownloadProgressCollection.Add(new DownloadItemProgressViewModel
+                {
+                    FileName = "System",
+                    Status = "All downloads finished.",
+                    BytesReceived = 0,
+                    TotalBytes = null,
+                    BytesPerSecond = null
+                });
 
-        if (_abortRequested)
-        {
-            _abortRequested = false;
-            var logRow = new LogDto
-            {
-                Filename = "System",
-                Result = "Aborted!",
-                Status = LogStatus.Warning
-            };
-            LogCollection.Add(logRow);
-        }
-        else
-        {
-            var logRow = new LogDto
-            {
-                Filename = "System",
-                Result = "All downloads finished.",
-                Status = LogStatus.Success
-            };
-            LogCollection.Add(logRow);
-            ProgressBarDownload.Value = 100; // ensure full bar on completion
-
-            if (CheckBoxCleanup.IsChecked == true)
-            {
-                var successfulItems = downloadItems.Where(x => 
-                    LogCollection.Any(l => l.Filename == x.FileName && l.Status == LogStatus.Success)).ToList();
-                    
-                await Task.Run(() => _service.CleanupReport(_filename, successfulItems));
-                
-                 LogCollection.Add(new LogDto
-                 {
-                     Filename = "System",
-                     Result = "Report file cleaned up.",
-                     Status = LogStatus.Info
-                 });
+                ProgressBarDownload.Value = 100;
             }
+
+            _downloadCts?.Dispose();
+            _downloadCts = null;
         }
-        ButtonAbort.IsEnabled = false;
-        _downloadCts?.Dispose();
-        _downloadCts = null;
+        finally
+        {
+            IsDownloading = false;
+        }
     }
 
     private void ButtonAbort_OnClick(object sender, RoutedEventArgs e)
@@ -247,18 +345,17 @@ public partial class MainWindow
         {
             var jsonPath = Path.Combine(Directory.GetCurrentDirectory(), "appsettings.json");
             string json = File.Exists(jsonPath) ? File.ReadAllText(jsonPath) : "{}";
-            
-            // Simple string replacement/construction to avoid heavy JSON dependencies if not already referenced, 
-            // but assuming System.Text.Json is available in modern .NET
+
             var options = new System.Text.Json.Nodes.JsonObject();
-            
-            // Try to parse existing to keep other keys (like Serilog)
-            try 
+
+            try
             {
-               var node = System.Text.Json.Nodes.JsonNode.Parse(json);
-               if (node is System.Text.Json.Nodes.JsonObject obj) options = obj;
-            } 
-            catch { }
+                var node = System.Text.Json.Nodes.JsonNode.Parse(json);
+                if (node is System.Text.Json.Nodes.JsonObject obj) options = obj;
+            }
+            catch
+            {
+            }
 
             options["MissFile"] = TextBoxFilename.Text;
             options["Website"] = TextBoxWebsite.Text;

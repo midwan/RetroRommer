@@ -4,10 +4,16 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:local="clr-namespace:RetroRommer.Core"
         Background="{DynamicResource ApplicationBackgroundBrush}"
         mc:Ignorable="d"
         DataContext="{Binding RelativeSource={RelativeSource Self}}"
-        Title="RetroRommer" Height="600" Width="700" WindowStartupLocation="CenterScreen" MinHeight="500" MinWidth="650">
+        Title="RetroRommer" Height="700" Width="700" WindowStartupLocation="CenterScreen" MinHeight="500" MinWidth="650">
+
+    <ui:FluentWindow.Resources>
+        <local:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+    </ui:FluentWindow.Resources>
+
     <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -15,6 +21,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <ui:TitleBar Title="RetroRommer" Grid.Row="0"/>
@@ -75,65 +82,35 @@
             <ui:Button x:Name="ButtonAbort" Content="Stop" Icon="Dismiss24" Width="120" Margin="5" Click="ButtonAbort_OnClick" IsEnabled="False" IsCancel="True" Appearance="Danger"/>
         </StackPanel>
 
-        <!-- Logs -->
-        <Grid Grid.Row="4">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-            </Grid.RowDefinitions>
+        <!-- Per-file status -->
+        <GroupBox Header="Current Downloads" Grid.Row="4" Margin="0,0,0,10" Visibility="{Binding IsDownloading, Converter={StaticResource BoolToVisibilityConverter}}">
+            <Grid Margin="10">
+                <ui:ListView x:Name="LvDownloads"
+                             ItemsSource="{Binding DownloadProgressCollection}"
+                             BorderThickness="1"
+                             BorderBrush="#33000000"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListView.View>
+                        <ui:GridView>
+                            <ui:GridViewColumn Header="File" Width="310" DisplayMemberBinding="{Binding FileName}"/>
+                            <ui:GridViewColumn Header="Progress" Width="220">
+                                <ui:GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel>
+                                            <ProgressBar Height="12" Minimum="0" Maximum="100" Value="{Binding ProgressPercent, Mode=OneWay}"/>
+                                            <TextBlock Foreground="Gray" Text="{Binding ProgressText}"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ui:GridViewColumn.CellTemplate>
+                            </ui:GridViewColumn>
+                            <ui:GridViewColumn Header="Speed" Width="110" DisplayMemberBinding="{Binding SpeedText}"/>
+                        </ui:GridView>
+                    </ListView.View>
+                </ui:ListView>
+            </Grid>
+        </GroupBox>
 
-            <ProgressBar x:Name="ProgressBarDownload" Grid.Row="0" Margin="0,0,0,5" Height="4" Minimum="0" Maximum="100"/>
-
-            <ui:ListView x:Name="LvLog" Grid.Row="1" ItemsSource="{Binding LogCollection}" BorderThickness="1" BorderBrush="#33000000">
-                <ListView.View>
-                    <ui:GridView>
-                        <ui:GridViewColumn Header="Time" Width="80">
-                            <ui:GridViewColumn.CellTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding Timestamp, StringFormat=HH:mm:ss}" Foreground="Gray"/>
-                                </DataTemplate>
-                            </ui:GridViewColumn.CellTemplate>
-                        </ui:GridViewColumn>
-                        
-                        <ui:GridViewColumn Header="Status" Width="50">
-                            <ui:GridViewColumn.CellTemplate>
-                                <DataTemplate>
-                                    <ui:SymbolIcon Symbol="Info24" FontSize="16" Foreground="Gray" x:Name="StatusIcon"/>
-                                    <DataTemplate.Triggers>
-                                        <DataTrigger Binding="{Binding Status}" Value="Success">
-                                            <Setter TargetName="StatusIcon" Property="Symbol" Value="CheckmarkCircle24"/>
-                                            <Setter TargetName="StatusIcon" Property="Foreground" Value="Green"/>
-                                        </DataTrigger>
-                                        <DataTrigger Binding="{Binding Status}" Value="Error">
-                                            <Setter TargetName="StatusIcon" Property="Symbol" Value="DismissCircle24"/>
-                                            <Setter TargetName="StatusIcon" Property="Foreground" Value="Red"/>
-                                        </DataTrigger>
-                                        <DataTrigger Binding="{Binding Status}" Value="Warning">
-                                            <Setter TargetName="StatusIcon" Property="Symbol" Value="Warning24"/>
-                                            <Setter TargetName="StatusIcon" Property="Foreground" Value="Orange"/>
-                                        </DataTrigger>
-                                    </DataTemplate.Triggers>
-                                </DataTemplate>
-                            </ui:GridViewColumn.CellTemplate>
-                        </ui:GridViewColumn>
-
-                        <ui:GridViewColumn Header="Filename" Width="350" DisplayMemberBinding="{Binding Filename}"/>
-                        
-                        <ui:GridViewColumn Header="Result" Width="250">
-                            <ui:GridViewColumn.CellTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding Result}" x:Name="ResultText"/>
-                                    <DataTemplate.Triggers>
-                                        <DataTrigger Binding="{Binding Status}" Value="Error">
-                                            <Setter TargetName="ResultText" Property="Foreground" Value="Red"/>
-                                        </DataTrigger>
-                                    </DataTemplate.Triggers>
-                                </DataTemplate>
-                            </ui:GridViewColumn.CellTemplate>
-                        </ui:GridViewColumn>
-                    </ui:GridView>
-                </ListView.View>
-            </ui:ListView>
-        </Grid>
+        <ProgressBar x:Name="ProgressBarDownload" Grid.Row="5" Height="4" Minimum="0" Maximum="100"/> 
     </Grid>
 </ui:FluentWindow>

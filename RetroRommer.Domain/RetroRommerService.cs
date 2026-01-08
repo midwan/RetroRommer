@@ -164,7 +164,14 @@ public class RetroRommerService
         return results;
     }
 
-    public async Task<string> GetFile(string website, DownloadItem item, string userName, string passwd, string destination, CancellationToken cancellationToken = default)
+    public async Task<string> GetFile(
+        string website,
+        DownloadItem item,
+        string userName,
+        string passwd,
+        string destination,
+        CancellationToken cancellationToken = default,
+        IProgress<DownloadProgressInfo>? progress = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         using var client = new HttpClient();
@@ -173,9 +180,9 @@ public class RetroRommerService
 
         string urlPath;
         string localFolder;
-        
+
         if (!website.EndsWith("/")) website += "/";
-        
+
         // Base logic
         switch (item.Type)
         {
@@ -184,52 +191,52 @@ public class RetroRommerService
                 localFolder = Path.Combine(destination, "CHDs", item.SetName);
                 break;
             case DownloadType.Sample:
-                 urlPath = $"samples/{item.FileName}";
-                 localFolder = Path.Combine(destination, "samples");
-                 break;
+                urlPath = $"samples/{item.FileName}";
+                localFolder = Path.Combine(destination, "samples");
+                break;
             case DownloadType.Bios:
-                 urlPath = $"bios/{item.FileName}";
-                 localFolder = Path.Combine(destination, "bios");
-                 break;
+                urlPath = $"bios/{item.FileName}";
+                localFolder = Path.Combine(destination, "bios");
+                break;
             case DownloadType.Rom:
             default:
-                 urlPath = $"currentroms/{item.FileName}";
-                 localFolder = Path.Combine(destination, "currentroms");
-                 break;
+                urlPath = $"currentroms/{item.FileName}";
+                localFolder = Path.Combine(destination, "currentroms");
+                break;
         }
 
-        try 
+        try
         {
-            return await TryDownload(client, website + urlPath, localFolder, item.FileName, cancellationToken);
+            return await TryDownload(client, website + urlPath, localFolder, item.FileName, cancellationToken, progress);
         }
         catch (OperationCanceledException)
         {
             _logger.Information($"Download canceled for {item.FileName}");
             throw;
         }
-        catch (HttpRequestException ex) when (item.Type == DownloadType.Rom) 
+        catch (HttpRequestException ex) when (item.Type == DownloadType.Rom)
         {
             cancellationToken.ThrowIfCancellationRequested();
             _logger.Warning($"Failed to find {item.FileName} in currentroms, trying bios folder...");
             var biosUrl = $"bios/{item.FileName}";
             var biosFolder = Path.Combine(destination, "bios");
-            try 
+            try
             {
-                return await TryDownload(client, website + biosUrl, biosFolder, item.FileName, cancellationToken);
-             }
-             catch (TooManyAttemptsException)
-             {
-                 throw;
-             }
-             catch (OperationCanceledException)
-             {
-                 _logger.Information($"Download canceled for {item.FileName}");
-                 throw;
-             }
-             catch (Exception innerEx)
-             {
-                 return HandleException(item.FileName, innerEx);
-             }
+                return await TryDownload(client, website + biosUrl, biosFolder, item.FileName, cancellationToken, progress);
+            }
+            catch (TooManyAttemptsException)
+            {
+                throw;
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.Information($"Download canceled for {item.FileName}");
+                throw;
+            }
+            catch (Exception innerEx)
+            {
+                return HandleException(item.FileName, innerEx);
+            }
         }
         catch (TooManyAttemptsException)
         {
@@ -237,15 +244,21 @@ public class RetroRommerService
         }
         catch (Exception ex)
         {
-             return HandleException(item.FileName, ex);
+            return HandleException(item.FileName, ex);
         }
     }
 
-    private async Task<string> TryDownload(HttpClient client, string url, string folder, string fileName, CancellationToken cancellationToken)
+    private async Task<string> TryDownload(
+        HttpClient client,
+        string url,
+        string folder,
+        string fileName,
+        CancellationToken cancellationToken,
+        IProgress<DownloadProgressInfo>? progress)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!Directory.Exists(folder)) Directory.CreateDirectory(folder);
-        
+
         _logger.Information($"Downloading {fileName} from {url} to {folder}");
         using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
@@ -264,7 +277,7 @@ public class RetroRommerService
             var preview = responseBody.Length > 200 ? responseBody[..200] : responseBody;
             throw new HttpRequestException($"Received unexpected HTML content instead of binary file. Response preview: {preview}");
         }
-        
+
         if (!response.IsSuccessStatusCode)
         {
             var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -276,10 +289,62 @@ public class RetroRommerService
             throw new HttpRequestException($"HTTP {response.StatusCode}: {response.ReasonPhrase}");
         }
 
-        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var fileStream = new FileStream(Path.Combine(folder, fileName), FileMode.Create, FileAccess.Write, FileShare.None);
-        await stream.CopyToAsync(fileStream, cancellationToken);
-        
+        var totalBytes = response.Content.Headers.ContentLength;
+        progress?.Report(new DownloadProgressInfo
+        {
+            FileName = fileName,
+            TotalBytes = totalBytes,
+            BytesReceived = 0,
+            BytesPerSecond = null
+        });
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        await using var fileStream = new FileStream(Path.Combine(folder, fileName), FileMode.Create, FileAccess.Write, FileShare.None);
+
+        var buffer = new byte[1024 * 128];
+        long totalRead = 0;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        long lastReportBytes = 0;
+        long lastReportMs = 0;
+
+        while (true)
+        {
+            var bytesRead = await stream.ReadAsync(buffer, cancellationToken);
+            if (bytesRead <= 0) break;
+
+            await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+            totalRead += bytesRead;
+
+            var elapsedMs = sw.ElapsedMilliseconds;
+            if (elapsedMs - lastReportMs >= 250)
+            {
+                var dt = elapsedMs - lastReportMs;
+                var db = totalRead - lastReportBytes;
+                var bps = dt > 0 ? db * 1000.0 / dt : (double?)null;
+
+                progress?.Report(new DownloadProgressInfo
+                {
+                    FileName = fileName,
+                    TotalBytes = totalBytes,
+                    BytesReceived = totalRead,
+                    BytesPerSecond = bps
+                });
+
+                lastReportBytes = totalRead;
+                lastReportMs = elapsedMs;
+            }
+        }
+
+        // final report
+        var avgBps = sw.ElapsedMilliseconds > 0 ? totalRead * 1000.0 / sw.ElapsedMilliseconds : (double?)null;
+        progress?.Report(new DownloadProgressInfo
+        {
+            FileName = fileName,
+            TotalBytes = totalBytes,
+            BytesReceived = totalRead,
+            BytesPerSecond = avgBps
+        });
+
         return "OK";
     }
 
@@ -313,78 +378,134 @@ public class RetroRommerService
     public void CleanupReport(string file, IEnumerable<DownloadItem> successfulDownloads)
     {
         if (string.IsNullOrEmpty(file) || !File.Exists(file)) return;
-        
-        // Cache successful downloads for faster lookup
-        // Use a composite key or separate sets.
-        // For ROMs and Samples, we assume 1 set = 1 download (as we download the whole zip).
-        // For CHDs, it's specific filenames.
-        
+
         var successfulRoms = new HashSet<string>(successfulDownloads
             .Where(x => x.Type == DownloadType.Rom || x.Type == DownloadType.Bios)
             .Select(x => x.SetName));
-            
+
         var successfulSamples = new HashSet<string>(successfulDownloads
             .Where(x => x.Type == DownloadType.Sample)
             .Select(x => x.SetName));
-            
+
         var successfulChds = new HashSet<string>(successfulDownloads
             .Where(x => x.Type == DownloadType.Chd)
-            .Select(x => x.FileName)); // CHDs are tracked by filename in the list logic below
+            .Select(x => x.FileName));
 
         try
         {
             var lines = File.ReadAllLines(file);
             var outputLines = new List<string>();
+
             string currentSet = string.Empty;
+
+            string? pendingHeaderLine = null;
+            bool currentSetHasRemainingMissing = false;
+
+            void FlushPendingHeaderIfNeeded()
+            {
+                if (pendingHeaderLine == null) return;
+                if (currentSetHasRemainingMissing)
+                {
+                    outputLines.Add(pendingHeaderLine);
+                }
+
+                pendingHeaderLine = null;
+                currentSetHasRemainingMissing = false;
+            }
+
+            bool IsSetHeader(string trimmedLine)
+            {
+                if (!trimmedLine.EndsWith("]") || !trimmedLine.Contains("[")) return false;
+                if (trimmedLine.StartsWith("missing", StringComparison.OrdinalIgnoreCase)) return false;
+
+                var lastOpen = trimmedLine.LastIndexOf('[');
+                if (lastOpen == -1) return false;
+
+                var possibleSet = trimmedLine.Substring(lastOpen + 1, trimmedLine.Length - lastOpen - 2);
+                return !possibleSet.Contains(':');
+            }
+
+            string? ExtractSetName(string trimmedLine)
+            {
+                var lastOpen = trimmedLine.LastIndexOf('[');
+                if (lastOpen == -1) return null;
+
+                var possibleSet = trimmedLine.Substring(lastOpen + 1, trimmedLine.Length - lastOpen - 2);
+                if (possibleSet.Contains(':')) return null;
+                return possibleSet;
+            }
 
             foreach (var line in lines)
             {
                 var trimmed = line.Trim();
 
-                // Set detection (copy-pasted logic from ParseReport essentially)
-                if (trimmed.EndsWith("]") && trimmed.Contains("[") && !trimmed.StartsWith("missing", StringComparison.OrdinalIgnoreCase))
+                if (IsSetHeader(trimmed))
                 {
-                    var lastOpen = trimmed.LastIndexOf('[');
-                    if (lastOpen != -1)
-                    {
-                        var possibleSet = trimmed.Substring(lastOpen + 1, trimmed.Length - lastOpen - 2);
-                        if (!possibleSet.Contains(':'))
-                        {
-                            currentSet = possibleSet;
-                        }
-                    }
+                    FlushPendingHeaderIfNeeded();
+
+                    currentSet = ExtractSetName(trimmed) ?? string.Empty;
+                    pendingHeaderLine = line;
+                    continue;
+                }
+
+                // preserve blank lines right away (we'll still avoid orphaned headers)
+                if (string.IsNullOrWhiteSpace(trimmed))
+                {
                     outputLines.Add(line);
                     continue;
                 }
 
-                if (trimmed.StartsWith("missing rom:"))
+                var isMissing = trimmed.StartsWith("missing ", StringComparison.OrdinalIgnoreCase);
+
+                if (trimmed.StartsWith("missing rom:", StringComparison.OrdinalIgnoreCase))
                 {
-                    // For ROM/Bios, if we downloaded the set, we remove the line.
-                    // Note: This removes *all* missing rom lines for that set if we marked the set as success.
-                    // Since our downloader downloads "setname.zip" which presumably contains all needed roms, this is safe.
-                    if (successfulRoms.Contains(currentSet)) continue;
+                    if (successfulRoms.Contains(currentSet))
+                    {
+                        continue;
+                    }
                 }
-                
-                if (trimmed.StartsWith("missing sample:"))
+                else if (trimmed.StartsWith("missing sample:", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (successfulSamples.Contains(currentSet)) continue;
+                    if (successfulSamples.Contains(currentSet))
+                    {
+                        continue;
+                    }
                 }
-                
-                if (trimmed.StartsWith("missing disk:"))
+                else if (trimmed.StartsWith("missing disk:", StringComparison.OrdinalIgnoreCase))
                 {
-                     var content = trimmed.Substring("missing disk:".Length).Trim();
-                     var crcIndex = content.IndexOf("[", StringComparison.OrdinalIgnoreCase);
-                     if (crcIndex > 0) content = content.Substring(0, crcIndex).Trim();
-                     if (!string.IsNullOrWhiteSpace(content))
-                     {
-                         if (!content.EndsWith(".chd", StringComparison.OrdinalIgnoreCase)) content += ".chd";
-                         if (successfulChds.Contains(content)) continue;
-                     }
+                    var content = trimmed.Substring("missing disk:".Length).Trim();
+                    var crcIndex = content.IndexOf("[", StringComparison.OrdinalIgnoreCase);
+                    if (crcIndex > 0) content = content.Substring(0, crcIndex).Trim();
+                    if (!string.IsNullOrWhiteSpace(content))
+                    {
+                        if (!content.EndsWith(".chd", StringComparison.OrdinalIgnoreCase)) content += ".chd";
+                        if (successfulChds.Contains(content))
+                        {
+                            continue;
+                        }
+                    }
+                }
+
+                // If we get here, we are keeping the line.
+                // If it's a missing-* line, that means the section still has missing items and we should keep the header.
+                if (isMissing)
+                {
+                    currentSetHasRemainingMissing = true;
+                }
+
+                // If we're about to keep any content under a set, emit the header only if there is remaining missing.
+                // Non-missing informational lines are kept as-is but should not force keeping the header.
+                if (pendingHeaderLine != null && currentSetHasRemainingMissing)
+                {
+                    outputLines.Add(pendingHeaderLine);
+                    pendingHeaderLine = null;
                 }
 
                 outputLines.Add(line);
             }
-            
+
+            FlushPendingHeaderIfNeeded();
+
             File.WriteAllLines(file, outputLines);
             _logger.Information($"Cleaned up report file {file}");
         }

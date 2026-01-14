@@ -8,7 +8,7 @@
         Background="{DynamicResource ApplicationBackgroundBrush}"
         mc:Ignorable="d"
         DataContext="{Binding RelativeSource={RelativeSource Self}}"
-        Title="RetroRommer" Height="700" Width="700" WindowStartupLocation="CenterScreen" MinHeight="500" MinWidth="650">
+        Title="RetroRommer" Height="820" Width="880" WindowStartupLocation="CenterScreen" MinHeight="600" MinWidth="820">
 
     <ui:FluentWindow.Resources>
         <local:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
@@ -83,7 +83,7 @@
         </StackPanel>
 
         <!-- Per-file status -->
-        <GroupBox Header="Current Downloads" Grid.Row="4" Margin="0,0,0,10" Visibility="{Binding IsDownloading, Converter={StaticResource BoolToVisibilityConverter}}">
+        <GroupBox Header="Current Downloads" Grid.Row="4" Margin="0,0,0,10">
             <Grid Margin="10">
                 <ui:ListView x:Name="LvDownloads"
                              ItemsSource="{Binding DownloadProgressCollection}"
@@ -93,6 +93,20 @@
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                     <ListView.View>
                         <ui:GridView>
+                            <ui:GridViewColumn Header="Status" Width="60">
+                                <ui:GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Grid HorizontalAlignment="Center">
+                                            <ui:SymbolIcon Symbol="CheckmarkCircle24"
+                                                          Foreground="#FF2E7D32"
+                                                          Visibility="{Binding IsSuccess, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                            <ui:SymbolIcon Symbol="DismissCircle24"
+                                                          Foreground="#FFC62828"
+                                                          Visibility="{Binding IsSuccess, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=True}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ui:GridViewColumn.CellTemplate>
+                            </ui:GridViewColumn>
                             <ui:GridViewColumn Header="File" Width="310" DisplayMemberBinding="{Binding FileName}"/>
                             <ui:GridViewColumn Header="Progress" Width="220">
                                 <ui:GridViewColumn.CellTemplate>
@@ -104,7 +118,7 @@
                                     </DataTemplate>
                                 </ui:GridViewColumn.CellTemplate>
                             </ui:GridViewColumn>
-                            <ui:GridViewColumn Header="Speed" Width="110" DisplayMemberBinding="{Binding SpeedText}"/>
+                            <ui:GridViewColumn Header="Info" Width="120" DisplayMemberBinding="{Binding RightText}"/>
                         </ui:GridView>
                     </ListView.View>
                 </ui:ListView>

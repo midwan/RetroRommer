@@ -7,6 +7,9 @@ public sealed class DownloadItemProgressViewModel : INotifyPropertyChanged
 {
     private string _fileName = string.Empty;
     private string _status = string.Empty;
+    private bool? _isSuccess;
+    private string _statusDetail = string.Empty;
+    private bool _isCompleted;
     private long? _totalBytes;
     private long _bytesReceived;
     private double? _bytesPerSecond;
@@ -21,6 +24,31 @@ public sealed class DownloadItemProgressViewModel : INotifyPropertyChanged
     {
         get => _status;
         set { _status = value; OnPropertyChanged(); }
+    }
+
+    public bool? IsSuccess
+    {
+        get => _isSuccess;
+        set { _isSuccess = value; OnPropertyChanged(); OnPropertyChanged(nameof(StatusSymbol)); }
+    }
+
+    public string StatusSymbol => IsSuccess switch
+    {
+        true => "OK",
+        false => "NOK",
+        _ => string.Empty
+    };
+
+    public string StatusDetail
+    {
+        get => _statusDetail;
+        set { _statusDetail = value; OnPropertyChanged(); OnPropertyChanged(nameof(RightText)); }
+    }
+
+    public bool IsCompleted
+    {
+        get => _isCompleted;
+        set { _isCompleted = value; OnPropertyChanged(); OnPropertyChanged(nameof(RightText)); }
     }
 
     public long? TotalBytes
@@ -56,6 +84,8 @@ public sealed class DownloadItemProgressViewModel : INotifyPropertyChanged
     }
 
     public string SpeedText => BytesPerSecond is > 0 ? $"{FormatBytes((long)BytesPerSecond.Value)}/s" : string.Empty;
+
+    public string RightText => IsCompleted ? StatusDetail : SpeedText;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

@@ -4,7 +4,7 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows7.0</TargetFramework>
     <UseWPF>true</UseWPF>
-    <Version>1.1.1</Version>
+    <Version>1.1.2</Version>
 	<InterceptorsPreviewNamespaces>$(InterceptorsPreviewNamespaces);Microsoft.Extensions.Configuration.Binder.SourceGeneration</InterceptorsPreviewNamespaces>
 	<ApplicationIcon>chip-25.ico</ApplicationIcon>
     <ImplicitUsings>enable</ImplicitUsings>

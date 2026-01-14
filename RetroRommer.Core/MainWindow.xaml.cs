@@ -29,6 +29,7 @@ public partial class MainWindow : INotifyPropertyChanged
     private bool _abortRequested;
     private string _website;
     private CancellationTokenSource? _downloadCts;
+    private bool _abortedDueToRateLimit;
 
     private bool _isDownloading;
 
@@ -94,6 +95,39 @@ public partial class MainWindow : INotifyPropertyChanged
         IsDownloading = false;
     }
 
+    private static string NormalizeDownloadError(string? error)
+    {
+        if (string.IsNullOrWhiteSpace(error)) return "Failed";
+
+        if (error.Contains("404", StringComparison.OrdinalIgnoreCase) ||
+            error.Contains("NotFound", StringComparison.OrdinalIgnoreCase) ||
+            error.Contains("Not Found", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Not Found";
+        }
+
+        if (error.Contains("timed out", StringComparison.OrdinalIgnoreCase) ||
+            error.Contains("timeout", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Timeout";
+        }
+
+        if (error.Contains("Unauthorized", StringComparison.OrdinalIgnoreCase) ||
+            error.Contains("401", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Unauthorized";
+        }
+
+        if (error.Contains("too many attempts", StringComparison.OrdinalIgnoreCase) ||
+            error.Contains("too many", StringComparison.OrdinalIgnoreCase) && error.Contains("attempt", StringComparison.OrdinalIgnoreCase) ||
+            error.Contains("429", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Rate limit reached";
+        }
+
+        return error;
+    }
+
     private void DownloadsCollection_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         if (e.Action != NotifyCollectionChangedAction.Add) return;
@@ -150,6 +184,7 @@ public partial class MainWindow : INotifyPropertyChanged
             }
 
             _abortRequested = false;
+            _abortedDueToRateLimit = false;
             _downloadCts?.Cancel();
             _downloadCts?.Dispose();
             _downloadCts = new CancellationTokenSource();
@@ -201,6 +236,9 @@ public partial class MainWindow : INotifyPropertyChanged
                     {
                         FileName = item.FileName,
                         Status = "Starting...",
+                        StatusDetail = string.Empty,
+                        IsSuccess = null,
+                        IsCompleted = false,
                         BytesReceived = 0,
                         TotalBytes = null,
                         BytesPerSecond = null
@@ -220,28 +258,48 @@ public partial class MainWindow : INotifyPropertyChanged
                     {
                         var result = await _service.GetFile(_website, item, _username, _password, _destinationPath, cancellationToken, uiProgress);
 
-                        vm.Status = result == "OK" ? "Done" : result;
+                        vm.IsCompleted = true;
+                        vm.BytesPerSecond = null;
+
+                        vm.IsSuccess = string.Equals(result, "OK", StringComparison.OrdinalIgnoreCase);
+                        vm.Status = vm.IsSuccess == true ? "Done" : "Failed";
+                        vm.StatusDetail = vm.IsSuccess == true ? "OK" : NormalizeDownloadError(result);
 
                         if (result == "Unauthorized")
                         {
+                            vm.IsSuccess = false;
                             vm.Status = "Unauthorized";
+                            vm.StatusDetail = "Unauthorized";
                             break;
                         }
                     }
                     catch (TooManyAttemptsException ex)
                     {
-                        vm.Status = $"Error: {ex.Message}";
+                        vm.IsCompleted = true;
+                        vm.BytesPerSecond = null;
+                        vm.IsSuccess = false;
+                        vm.Status = "Aborted";
+                        vm.StatusDetail = "Rate limit reached";
+                        _abortedDueToRateLimit = true;
                         _abortRequested = true;
                         break;
                     }
                     catch (OperationCanceledException)
                     {
+                        vm.IsCompleted = true;
+                        vm.BytesPerSecond = null;
+                        vm.IsSuccess = false;
                         vm.Status = "Canceled";
+                        vm.StatusDetail = "Canceled";
                         throw;
                     }
                     catch (Exception ex)
                     {
-                        vm.Status = $"Error: {ex.Message}";
+                        vm.IsCompleted = true;
+                        vm.BytesPerSecond = null;
+                        vm.IsSuccess = false;
+                        vm.Status = "Failed";
+                        vm.StatusDetail = NormalizeDownloadError(ex.Message);
                     }
                     finally
                     {
@@ -298,6 +356,11 @@ public partial class MainWindow : INotifyPropertyChanged
                 {
                     FileName = "System",
                     Status = "Aborted!",
+                    IsCompleted = true,
+                    IsSuccess = false,
+                    StatusDetail = _abortedDueToRateLimit
+                        ? "Aborted: server rate limit reached (too many attempts)."
+                        : "Aborted.",
                     BytesReceived = 0,
                     TotalBytes = null,
                     BytesPerSecond = null
